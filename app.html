@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Syndicate Portal Pro</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        :root { --tg-theme-bg-color: #ffffff; --tg-theme-text-color: #000000; }
+        body { background-color: var(--tg-theme-bg-color, #f4f4f9); color: var(--tg-theme-text-color, #222); font-family: -apple-system, sans-serif; min-height: 100vh; padding-bottom: 200px; }
+        .card { background-color: #efeff4; border-radius: 16px; }
+        .floating-debug { 
+            position: fixed; bottom: 20px; left: 20px; right: 20px; 
+            background: rgba(0,0,0,0.9); color: #00ff00; 
+            font-family: monospace; font-size: 11px; padding: 15px; 
+            border-radius: 15px; border: 2px solid #00ff00; 
+            z-index: 9999; max-height: 120px; overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="p-4">
+
+    <!-- TOP SYNC BAR -->
+    <div id="sync-header" class="mb-6 p-4 card border-4 border-blue-500">
+        <h2 class="text-sm font-black mb-2 uppercase">Connection Settings</h2>
+        <input type="url" id="api-url-input" placeholder="https://script.google.com" class="w-full p-4 rounded-xl text-sm border-2 border-gray-200 mb-3 outline-none">
+        <button id="connect-btn" onclick="saveAndSync()" class="w-full bg-blue-500 text-white font-black py-4 rounded-xl shadow-lg active:scale-95 transition-all">CONNECT DASHBOARD</button>
+        <button id="force-btn" onclick="forceSave()" class="w-full mt-3 bg-red-500 text-white font-black py-2 rounded-xl text-xs">BYPASS PING (FORCE SAVE)</button>
+    </div>
+
+    <!-- MAIN DASHBOARD -->
+    <div id="main-dashboard" class="hidden">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold">Syndicate <span class="opacity-30">V7.3</span></h1>
+            <button onclick="hardReset()" class="text-[10px] bg-red-100 text-red-500 px-3 py-1 rounded-full font-bold">WIPE SETTINGS</button>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mb-6">
+            <div class="card p-4 text-center"><p class="text-[10px] opacity-40 font-bold uppercase">Trades</p><p class="text-xl font-black" id="stat-total">0</p></div>
+            <div class="card p-4 text-center"><p class="text-[10px] opacity-40 font-bold uppercase">Win %</p><p class="text-xl font-black text-green-500" id="stat-winrate">0%</p></div>
+            <div class="card p-4 text-center"><p class="text-[10px] opacity-40 font-bold uppercase">Pips</p><p class="text-xl font-black" id="stat-pips">0</p></div>
+        </div>
+        <div class="card p-5 mb-6"><div id="chart-container" style="height: 180px;"></div></div>
+        <div id="signal-list" class="space-y-4"></div>
+    </div>
+
+    <div id="debug-log" class="floating-debug">
+        <div>> System V7.3 Loaded</div>
+        <div>> If this is green, you are on V7.3</div>
+        <div>> Waiting for URL...</div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready(); tg.expand();
+        let chart, lineSeries, apiUrl = "";
+        const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : "LOCAL_TEST";
+
+        function log(msg) {
+            const div = document.createElement('div');
+            div.innerText = `> ${msg}`;
+            const console = document.getElementById('debug-log');
+            console.appendChild(div);
+            console.scrollTop = console.scrollHeight;
+        }
+
+        function hardReset() {
+            tg.CloudStorage.removeItems(['api_url'], () => { location.reload(); });
+        }
+
+        function initChart() {
+            chart = LightweightCharts.createChart(document.getElementById('chart-container'), {
+                layout: { background: { color: 'transparent' } },
+                grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(0,0,0,0.05)' } },
+                rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false }
+            });
+            lineSeries = chart.addLineSeries({ color: '#2481cc', lineWidth: 4 });
+        }
+
+        function forceSave() {
+            const url = document.getElementById('api-url-input').value.trim();
+            if (!url.includes("script.google.com")) { tg.showAlert("Invalid URL!"); return; }
+            log("FORCING SAVE...");
+            tg.CloudStorage.setItem('api_url', url, () => {
+                apiUrl = url; refreshData();
+            });
+        }
+
+        async function saveAndSync() {
+            const input = document.getElementById('api-url-input');
+            let url = input.value.replace(/[\s\u200B-\u200D\uFEFF]/g, '').trim(); 
+            if (!url.startsWith("https://")) { log("HTTPS REQUIRED."); return; }
+            
+            log(`Pinging: ${url.substring(0, 40)}...`);
+            
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const response = await fetch(`${url}?check=ping&t=${Date.now()}`, { signal: controller.signal });
+                const data = await response.json();
+                clearTimeout(timeoutId);
+                
+                if (data.status === "online") {
+                    log("SUCCESS: Online.");
+                    tg.CloudStorage.setItem('api_url', url, () => {
+                        apiUrl = url; refreshData();
+                    });
+                }
+            } catch (err) {
+                log(`ERROR: ${err.message}`);
+                tg.showAlert("Check 'Anyone' access or use FORCE SAVE.");
+            }
+        }
+
+        async function refreshData() {
+            log("Fetching trades...");
+            try {
+                const response = await fetch(`${apiUrl}?userId=${userId}&t=${Date.now()}`);
+                const data = await response.json();
+                if (data.authorized === false) { 
+                    log("ACCESS DENIED: Join channel.");
+                    tg.showAlert("Access restricted to members!"); return; 
+                }
+                document.getElementById('sync-header').style.display = "none";
+                document.getElementById('main-dashboard').classList.remove('hidden');
+                document.getElementById('stat-total').innerText = data.stats.totalTrades;
+                document.getElementById('stat-winrate').innerText = data.stats.winRate;
+                document.getElementById('stat-pips').innerText = data.stats.totalPips;
+                const list = document.getElementById('signal-list');
+                list.innerHTML = "";
+                data.recentSignals.forEach(sig => {
+                    const card = document.createElement('div');
+                    card.className = "card p-5 flex justify-between items-center";
+                    const pipsColor = parseFloat(sig.pips) >= 0 ? "text-green-500" : "text-red-500";
+                    card.innerHTML = `<div><p class="text-[10px] opacity-30">${sig.provider}</p><p class="font-bold text-sm">${sig.side} GOLD @ ${sig.entry}</p></div><div class="text-right"><p class="text-xl font-black ${pipsColor}">${sig.pips}</p></div>`;
+                    list.appendChild(card);
+                });
+                log("Data Synced.");
+            } catch (err) { log(`FAIL: ${err.message}`); }
+        }
+
+        window.onload = () => {
+            initChart();
+            tg.CloudStorage.getItem('api_url', (err, value) => {
+                if (value) { 
+                    apiUrl = value; 
+                    document.getElementById('api-url-input').value = value;
+                    refreshData(); 
+                }
+            });
+        };
+    </script>
+</body>
+</html>
