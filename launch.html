@@ -22,19 +22,22 @@
 </head>
 <body class="p-4">
 
-    <!-- INSTANT CONNECTION BOX (V7.5) -->
+    <!-- INSTANT CONNECTION BOX (V7.6) -->
     <div id="sync-header" class="mb-6 p-6 card border-4 border-blue-500">
-        <h2 class="text-lg font-black mb-1 uppercase">Instant Sync</h2>
+        <h2 class="text-lg font-black mb-1 uppercase">Reliable Sync</h2>
         <p class="text-[10px] mb-4 opacity-50 font-bold">PASTE YOUR GOOGLE DEPLOYMENT LINK:</p>
         <input type="url" id="api-url-input" placeholder="https://script.google.com" class="w-full p-4 rounded-xl text-sm border-2 border-gray-200 mb-4 outline-none">
-        <button id="connect-btn" onclick="instantSave()" class="w-full bg-blue-500 text-white font-black py-5 rounded-xl shadow-lg active:scale-95 transition-all">LAUNCH DASHBOARD</button>
+        
+        <button id="connect-btn" onclick="reliableSave()" class="w-full bg-blue-500 text-white font-black py-5 rounded-xl shadow-lg active:scale-95 transition-all mb-3">SAVE & CONNECT</button>
+        
+        <button id="express-btn" onclick="expressConnect()" class="w-full bg-orange-500 text-white font-black py-3 rounded-xl text-xs uppercase opacity-80">Skip Save & Just Connect</button>
     </div>
 
     <!-- MAIN DASHBOARD -->
     <div id="main-dashboard" class="hidden">
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold">Syndicate <span class="opacity-30">V7.5</span></h1>
-            <button onclick="hardReset()" class="text-[10px] bg-red-100 text-red-500 px-3 py-1 rounded-full font-bold">RESET</button>
+            <h1 class="text-2xl font-bold">Syndicate <span class="opacity-30">V7.6</span></h1>
+            <button onclick="hardReset()" class="text-[10px] bg-red-100 text-red-500 px-3 py-1 rounded-full font-bold">WIPE DATA</button>
         </div>
         <div class="grid grid-cols-3 gap-3 mb-6">
             <div class="card p-4 text-center"><p class="text-[10px] opacity-40 font-bold uppercase">Trades</p><p class="text-xl font-black" id="stat-total">0</p></div>
@@ -46,8 +49,8 @@
     </div>
 
     <div id="debug-log" class="floating-debug">
-        <div>> System V7.5 Ready</div>
-        <div>> Ping requirement: REMOVED</div>
+        <div>> System V7.6 Online</div>
+        <div>> LocalStorage Fallback: ACTIVE</div>
         <div>> Waiting for URL...</div>
     </div>
 
@@ -66,7 +69,8 @@
         }
 
         function hardReset() {
-            tg.CloudStorage.removeItems(['api_url'], () => { location.reload(); });
+            localStorage.removeItem('api_url');
+            location.reload();
         }
 
         function initChart() {
@@ -78,19 +82,33 @@
             lineSeries = chart.addLineSeries({ color: '#2481cc', lineWidth: 4 });
         }
 
-        function instantSave() {
+        function reliableSave() {
             let url = document.getElementById('api-url-input').value.replace(/[\s\u200B-\u200D\uFEFF]/g, '').trim();
             if (!url.includes("://script.google.com")) { tg.showAlert("Please paste the full /exec URL!"); return; }
             if (!url.startsWith("https://")) url = url.replace("http://", "https://");
             
-            log("SAVING CONFIG (V7.5)...");
-            tg.CloudStorage.setItem('api_url', url, () => {
-                log("URL SAVED. OPENING DASHBOARD...");
+            log("SAVING LOCALLY...");
+            try {
+                localStorage.setItem('api_url', url);
+                log("SAVE SUCCESS. CONNECTING...");
                 apiUrl = url;
                 document.getElementById('sync-header').style.display = "none";
                 document.getElementById('main-dashboard').classList.remove('hidden');
                 refreshData();
-            });
+            } catch (e) {
+                log("LOCAL SAVE FAILED. ATTEMPTING EXPRESS...");
+                expressConnect();
+            }
+        }
+
+        function expressConnect() {
+            let url = document.getElementById('api-url-input').value.replace(/[\s\u200B-\u200D\uFEFF]/g, '').trim();
+            if (!url.includes("://script.google.com")) { tg.showAlert("Invalid URL!"); return; }
+            log("EXPRESS CONNECTING (NO SAVE)...");
+            apiUrl = url;
+            document.getElementById('sync-header').style.display = "none";
+            document.getElementById('main-dashboard').classList.remove('hidden');
+            refreshData();
         }
 
         async function refreshData() {
@@ -121,21 +139,20 @@
                 log("SYNC COMPLETE.");
             } catch (err) { 
                 log(`FETCH FAIL: ${err.message}`); 
-                tg.showAlert("Double-check that access is set to 'Anyone' in Google.");
+                tg.showAlert("Check 'Anyone' access in Google Deployment.");
             }
         }
 
         window.onload = () => {
             initChart();
-            tg.CloudStorage.getItem('api_url', (err, value) => {
-                if (value) { 
-                    apiUrl = value; 
-                    document.getElementById('api-url-input').value = value;
-                    document.getElementById('sync-header').style.display = "none";
-                    document.getElementById('main-dashboard').classList.remove('hidden');
-                    refreshData(); 
-                }
-            });
+            const savedUrl = localStorage.getItem('api_url');
+            if (savedUrl) { 
+                apiUrl = savedUrl; 
+                document.getElementById('api-url-input').value = savedUrl;
+                document.getElementById('sync-header').style.display = "none";
+                document.getElementById('main-dashboard').classList.remove('hidden');
+                refreshData(); 
+            }
         };
     </script>
 </body>
