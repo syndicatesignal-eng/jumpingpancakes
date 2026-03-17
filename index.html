@@ -8,32 +8,25 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
-        :root { --tg-theme-bg-color: #ffffff; --tg-theme-text-color: #000000; --tg-theme-button-color: #2481cc; }
+        :root { --tg-theme-bg-color: #ffffff; --tg-theme-text-color: #000000; }
         body { background-color: var(--tg-theme-bg-color, #f4f4f9); color: var(--tg-theme-text-color, #222); font-family: -apple-system, sans-serif; height: 100vh; overflow-y: auto; }
         .card { background-color: #efeff4; border-radius: 16px; }
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100; padding: 20px; align-items: flex-start; justify-content: center; }
-        .modal-content { background: white; border-radius: 28px; padding: 28px; width: 100%; max-width: 400px; margin-top: 10vh; }
-        input:focus { border-color: #2481cc; ring: 2px; }
+        .debug-console { font-family: monospace; font-size: 10px; background: #000; color: #0f0; padding: 10px; border-radius: 8px; margin-top: 20px; max-height: 100px; overflow-y: auto; }
     </style>
 </head>
-<body class="p-4 pb-20">
+<body class="p-4">
 
-    <!-- SYNC SCREEN (Initial State) -->
-    <div id="sync-screen" class="flex flex-col items-center justify-center min-h-[80vh] text-center p-6">
-        <div class="bg-blue-50 p-6 rounded-full mb-6">
-            <svg class="w-16 h-16 text-blue-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-        </div>
-        <h2 class="text-2xl font-black mb-2">Sync Dashboard</h2>
-        <p class="text-sm opacity-60 mb-10">Paste your Google Script URL below to load your trading data.</p>
-        <input type="url" id="api-url-main" placeholder="https://script.google.com/..." class="w-full border-2 border-gray-100 p-5 rounded-2xl mb-4 text-sm outline-none">
-        <button onclick="saveAndSync()" id="sync-btn" class="w-full bg-blue-500 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-transform">CONNECT DASHBOARD</button>
+    <!-- TOP SYNC BAR (Keyboard Proof) -->
+    <div id="sync-header" class="mb-6 p-4 card border-2 border-blue-500">
+        <h2 class="text-sm font-black mb-2 uppercase tracking-tighter">Connection Settings</h2>
+        <input type="url" id="api-url-input" placeholder="Paste /exec URL here..." class="w-full p-4 rounded-xl text-sm border-2 border-gray-100 mb-3 outline-none focus:border-blue-500">
+        <button id="connect-btn" onclick="saveAndSync()" class="w-full bg-blue-500 text-white font-black py-4 rounded-xl shadow-lg active:scale-95 transition-all">CONNECT DASHBOARD</button>
     </div>
 
-    <!-- MAIN DASHBOARD -->
+    <!-- MAIN DASHBOARD (Initially Hidden) -->
     <div id="main-dashboard" class="hidden">
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold">Syndicate <span class="opacity-30">V6.5</span></h1>
-            <button onclick="toggleSettings()" class="p-3 card"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg></button>
+            <h1 class="text-2xl font-bold">Syndicate <span class="opacity-30">V6.6</span></h1>
         </div>
         <div class="grid grid-cols-3 gap-3 mb-6">
             <div class="card p-4 text-center"><p class="text-[10px] opacity-40 font-bold uppercase">Trades</p><p class="text-xl font-black" id="stat-total">0</p></div>
@@ -44,11 +37,26 @@
         <div id="signal-list" class="space-y-4"></div>
     </div>
 
+    <!-- DEBUG CONSOLE -->
+    <div id="debug-log" class="debug-console">
+        <div>> System Initialized V6.6</div>
+        <div>> Waiting for Connection...</div>
+    </div>
+
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready();
+        tg.expand();
         let chart, lineSeries, apiUrl = "";
         const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : "LOCAL_TEST";
+
+        function log(msg) {
+            const div = document.createElement('div');
+            div.innerText = `> ${msg}`;
+            const console = document.getElementById('debug-log');
+            console.appendChild(div);
+            console.scrollTop = console.scrollHeight;
+        }
 
         function initChart() {
             chart = LightweightCharts.createChart(document.getElementById('chart-container'), {
@@ -59,27 +67,53 @@
             lineSeries = chart.addLineSeries({ color: '#2481cc', lineWidth: 4 });
         }
 
-        function saveAndSync() {
-            const input = document.getElementById('api-url-main').value.trim();
-            if (!input.includes("/exec")) { tg.showAlert("Invalid URL! Ensure it ends in /exec."); return; }
-            const btn = document.getElementById('sync-btn');
-            btn.innerText = "CONNECTING...";
+        async function saveAndSync() {
+            const input = document.getElementById('api-url-input');
+            const url = input.value.trim();
             
-            // USE CLOUD STORAGE FOR 2026 PERMANENCE
-            tg.CloudStorage.setItem('api_url', input, (err, success) => {
-                apiUrl = input;
-                refreshData();
-            });
+            // KEYBOARD FIX: BLUR INPUT TO RETRACT KEYBOARD
+            input.blur();
+            log(`Pasting URL: ${url.substring(0, 30)}...`);
+
+            if (!url.includes("/exec")) { 
+                log("ERROR: Invalid URL. Must end in /exec");
+                tg.showAlert("Use the URL ending in /exec!"); 
+                return; 
+            }
+
+            const btn = document.getElementById('connect-btn');
+            btn.innerText = "CONNECTING...";
+            log("Attempting to Ping Google...");
+
+            try {
+                const response = await fetch(`${url}?check=ping`);
+                const data = await response.json();
+                if (data.status === "online") {
+                    log(`SUCCESS: Connected to ${data.version}`);
+                    tg.CloudStorage.setItem('api_url', url, (err, success) => {
+                        apiUrl = url;
+                        refreshData();
+                    });
+                }
+            } catch (err) {
+                log(`FAILED: ${err.message}`);
+                tg.showAlert("Connection Failed. Is 'Access' set to 'Anyone'?");
+                btn.innerText = "RETRY CONNECTION";
+            }
         }
 
         async function refreshData() {
-            if (!apiUrl) return;
+            log("Fetching Dashboard Data...");
             try {
                 const response = await fetch(`${apiUrl}?userId=${userId}`);
                 const data = await response.json();
-                if (data.authorized === false) { tg.showAlert("Membership Required! Join the channel first."); return; }
+                if (data.authorized === false) { 
+                    log("DENIED: User not in channel.");
+                    tg.showAlert("Join the channel first!"); 
+                    return; 
+                }
                 
-                document.getElementById('sync-screen').classList.add('hidden');
+                document.getElementById('sync-header').style.display = "none";
                 document.getElementById('main-dashboard').classList.remove('hidden');
                 document.getElementById('stat-total').innerText = data.stats.totalTrades;
                 document.getElementById('stat-winrate').innerText = data.stats.winRate;
@@ -95,24 +129,23 @@
                     list.appendChild(card);
                 });
                 
-                const chartData = data.recentSignals.filter(s => s.status.includes("Closed")).map(s => ({ time: new Date(s.date).getTime()/1000, value: parseFloat(s.pips) })).sort((a,b) => a.time - b.time);
-                if (chartData.length > 0) {
-                    let cumulative = 0;
-                    lineSeries.setData(chartData.map(d => { cumulative += d.value; return { time: d.time, value: cumulative }; }));
-                    chart.timeScale().fitContent();
-                }
+                log("Dashboard Loaded Successfully.");
             } catch (err) { 
-                tg.showAlert("Sync Failed! Check your Apps Script Deployment settings."); 
-                document.getElementById('sync-btn').innerText = "RETRY CONNECTION";
+                log(`DATA ERROR: ${err.message}`);
             }
         }
 
         window.onload = () => {
             initChart();
             tg.CloudStorage.getItem('api_url', (err, value) => {
-                if (value) { apiUrl = value; refreshData(); }
+                if (value) { 
+                    log("Loaded Saved URL from Cloud.");
+                    apiUrl = value; 
+                    document.getElementById('api-url-input').value = value;
+                    refreshData(); 
+                }
             });
         };
     </script>
 </body>
-</html
+</html>
