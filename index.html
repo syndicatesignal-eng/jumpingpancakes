@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Signal Auditor Pro</title>
+    <script src="https://telegram.org"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        :root {
+            --tg-theme-bg-color: #ffffff;
+            --tg-theme-text-color: #000000;
+            --tg-theme-button-color: #2481cc;
+            --tg-theme-secondary-bg-color: #efeff4;
+        }
+        body {
+            background-color: var(--tg-theme-bg-color, #f4f4f9);
+            color: var(--tg-theme-text-color, #222);
+            font-family: -apple-system, system-ui, sans-serif;
+            overflow-x: hidden;
+        }
+        .card { background-color: var(--tg-theme-secondary-bg-color, #ffffff); border-radius: 12px; }
+        .status-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        .loader { border: 3px solid #f3f3f3; border-top: 3px solid var(--tg-theme-button-color, #2481cc); border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="p-4">
+
+    <!-- ACCESS DENIED SCREEN -->
+    <div id="denied-screen" class="hidden flex flex-col items-center justify-center min-h-[80vh] text-center p-6">
+        <div class="bg-red-100 p-4 rounded-full mb-4">
+            <svg class="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m0 0v2m0-2h2m-2 0H10m4-11a4 4 0 11-8 0 4 4 0 018 0zM7 10h10a2 2 0 012 2v8a2 2 0 01-2 2H7a2 2 0 01-2-2v-8a2 2 0 012-2z"></path></svg>
+        </div>
+        <h2 class="text-xl font-bold mb-2">Private Dashboard</h2>
+        <p class="text-sm opacity-60 mb-6">This dashboard is restricted to VIP Channel members only. Please join the channel to unlock your access.</p>
+        <button onclick="tg.close()" class="w-full bg-blue-500 text-white font-bold py-3 rounded-xl">CLOSE APP</button>
+    </div>
+
+    <!-- MAIN DASHBOARD -->
+    <div id="main-dashboard" class="">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-xl font-bold">Signal Auditor <span class="text-xs opacity-50">V5.9</span></h1>
+                <p class="text-sm opacity-60" id="user-greeting">Welcome, Trader</p>
+            </div>
+            <button onclick="toggleSettings()" class="p-2 opacity-60"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></button>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-3 gap-3 mb-6">
+            <div class="card p-3 text-center">
+                <p class="text-[10px] opacity-50 uppercase font-bold">Trades</p>
+                <p class="text-lg font-black" id="stat-total">0</p>
+            </div>
+            <div class="card p-3 text-center">
+                <p class="text-[10px] opacity-50 uppercase font-bold">Win Rate</p>
+                <p class="text-lg font-black text-green-500" id="stat-winrate">0%</p>
+            </div>
+            <div class="card p-3 text-center">
+                <p class="text-[10px] opacity-50 uppercase font-bold">Net Pips</p>
+                <p class="text-lg font-black" id="stat-pips">0</p>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="card p-4 mb-6">
+            <h2 class="text-xs font-black opacity-50 uppercase mb-2">Equity Growth</h2>
+            <div id="chart-container" style="height: 180px;"></div>
+        </div>
+
+        <!-- Signal Feed -->
+        <div class="flex justify-between items-center mb-3">
+            <h2 class="text-xs font-black opacity-50 uppercase">Live Feed</h2>
+            <button onclick="refreshData()" class="text-xs text-blue-500 font-bold flex items-center">
+                <div id="refresh-loader" class="loader hidden mr-2" style="width:10px; height:10px; border-width:2px;"></div>
+                REFRESH
+            </button>
+        </div>
+        <div id="signal-list" class="space-y-3 pb-10">
+            <p class="text-center opacity-40 py-10">Loading signals...</p>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-6">
+            <h2 class="text-lg font-bold mb-4">API Configuration</h2>
+            <input type="text" id="api-url-input" placeholder="Paste Web App URL here" class="w-full border rounded-lg p-3 text-sm mb-4 outline-none">
+            <button onclick="saveSettings()" class="w-full bg-blue-500 text-white font-bold py-3 rounded-lg mb-2">SAVE CONFIG</button>
+            <button onclick="toggleSettings()" class="w-full py-2 opacity-50 text-sm font-bold">CLOSE</button>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        let chart, lineSeries;
+        let apiUrl = localStorage.getItem('auditor_api_url') || "";
+        const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : "LOCAL_TEST";
+
+        if (tg.initDataUnsafe.user) {
+            document.getElementById('user-greeting').innerText = `Welcome, ${tg.initDataUnsafe.user.first_name}`;
+        }
+
+        function initChart() {
+            const container = document.getElementById('chart-container');
+            chart = LightweightCharts.createChart(container, {
+                layout: { background: { color: 'transparent' }, textColor: '#333' },
+                grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(0,0,0,0.05)' } },
+                rightPriceScale: { borderVisible: false },
+                timeScale: { borderVisible: false },
+                handleScroll: false, handleScale: false
+            });
+            lineSeries = chart.addLineSeries({ color: '#2481cc', lineWidth: 3 });
+        }
+
+        async function refreshData() {
+            if (!apiUrl) { toggleSettings(); return; }
+            document.getElementById('refresh-loader').classList.remove('hidden');
+            
+            try {
+                // Pass UserId to check membership
+                const response = await fetch(`${apiUrl}?userId=${userId}`);
+                const data = await response.json();
+                
+                if (data.authorized === false) {
+                    document.getElementById('main-dashboard').classList.add('hidden');
+                    document.getElementById('denied-screen').classList.remove('hidden');
+                    return;
+                }
+
+                document.getElementById('stat-total').innerText = data.stats.totalTrades;
+                document.getElementById('stat-winrate').innerText = data.stats.winRate;
+                document.getElementById('stat-pips').innerText = data.stats.totalPips;
+
+                const list = document.getElementById('signal-list');
+                list.innerHTML = "";
+                data.recentSignals.forEach(sig => {
+                    const card = document.createElement('div');
+                    card.className = "card p-4 flex justify-between items-center";
+                    const pipsColor = parseFloat(sig.pips) >= 0 ? "text-green-500" : "text-red-500";
+                    const statusClass = sig.status.includes("Closed") ? "bg-gray-100 text-gray-500" : "bg-blue-100 text-blue-500";
+                    card.innerHTML = `
+                        <div>
+                            <div class="flex items-center gap-2 mb-1"><span class="text-[10px] font-black opacity-30">${sig.provider}</span><span class="status-badge ${statusClass}">${sig.status.split('(')[1].replace(')', '')}</span></div>
+                            <p class="font-bold text-sm">${sig.side} GOLD @ ${sig.entry}</p>
+                        </div>
+                        <div class="text-right"><p class="text-lg font-black ${pipsColor}">${sig.pips > 0 ? '+' : ''}${sig.pips}</p></div>
+                    `;
+                    list.appendChild(card);
+                });
+
+                const chartData = data.recentSignals
+                    .filter(s => s.status.includes("Closed"))
+                    .map(s => ({ time: new Date(s.date).getTime() / 1000, value: parseFloat(s.pips) }))
+                    .sort((a, b) => a.time - b.time);
+
+                if (chartData.length > 0) {
+                    let cumulative = 0;
+                    const equityCurve = chartData.map(d => { cumulative += d.value; return { time: d.time, value: cumulative }; });
+                    lineSeries.setData(equityCurve);
+                    chart.timeScale().fitContent();
+                }
+            } catch (err) {
+                tg.showAlert("Sync Error. Check Settings.");
+            } finally {
+                document.getElementById('refresh-loader').classList.add('hidden');
+            }
+        }
+
+        function toggleSettings() { document.getElementById('settings-modal').classList.toggle('hidden'); }
+        function saveSettings() {
+            const input = document.getElementById('api-url-input').value;
+            localStorage.setItem('auditor_api_url', input);
+            apiUrl = input;
+            toggleSettings();
+            refreshData();
+        }
+
+        window.onload = () => { initChart(); refreshData(); };
+    </script>
+</body>
+</html>
