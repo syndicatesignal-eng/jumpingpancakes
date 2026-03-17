@@ -9,9 +9,8 @@
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root { --tg-theme-bg-color: #ffffff; --tg-theme-text-color: #000000; }
-        body { background-color: var(--tg-theme-bg-color, #f4f4f9); color: var(--tg-theme-text-color, #222); font-family: -apple-system, sans-serif; height: 100vh; padding-bottom: 120px; }
+        body { background-color: var(--tg-theme-bg-color, #f4f4f9); color: var(--tg-theme-text-color, #222); font-family: -apple-system, sans-serif; height: 100vh; padding-bottom: 140px; }
         .card { background-color: #efeff4; border-radius: 16px; }
-        /* FLOATING DEBUG CONSOLE - IMPOSSIBLE TO MISS */
         .floating-debug { 
             position: fixed; 
             bottom: 10px; 
@@ -23,11 +22,11 @@
             font-size: 11px; 
             padding: 12px; 
             border-radius: 12px; 
-            border: 2px solid #00ff00; 
+            border: 3px solid #00ff00; 
             z-index: 9999; 
-            max-height: 100px; 
+            max-height: 120px; 
             overflow-y: auto; 
-            box-shadow: 0 -5px 20px rgba(0,0,0,0.3);
+            box-shadow: 0 -5px 25px rgba(0,0,0,0.5);
         }
     </style>
 </head>
@@ -43,7 +42,7 @@
     <!-- MAIN DASHBOARD (Initially Hidden) -->
     <div id="main-dashboard" class="hidden">
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold">Syndicate <span class="opacity-30">V6.8</span></h1>
+            <h1 class="text-2xl font-bold">Syndicate <span class="opacity-30">V6.9</span></h1>
         </div>
         <div class="grid grid-cols-3 gap-3 mb-6">
             <div class="card p-4 text-center"><p class="text-[10px] opacity-40 font-bold uppercase">Trades</p><p class="text-xl font-black" id="stat-total">0</p></div>
@@ -56,8 +55,8 @@
 
     <!-- FLOATING DEBUG CONSOLE -->
     <div id="debug-log" class="floating-debug">
-        <div>> System V6.8 Initialized</div>
-        <div>> If this box is green, you are on V6.8</div>
+        <div>> System V6.9 Initialized</div>
+        <div>> Protocol: Secure HTTPS Required</div>
         <div>> Waiting for URL...</div>
     </div>
 
@@ -87,9 +86,16 @@
 
         async function saveAndSync() {
             const input = document.getElementById('api-url-input');
-            const url = input.value.trim();
+            let url = input.value.trim();
             input.blur();
-            log(`Checking: ${url.substring(0, 30)}...`);
+
+            // PROTOCOL AUTO-FIXER (V6.9)
+            if (url.startsWith("http://")) {
+                log("WARNING: Insecure HTTP detected.");
+                url = url.replace("http://", "https://");
+                log(`AUTO-FIXED: ${url.substring(0, 30)}...`);
+                input.value = url;
+            }
 
             if (!url.includes("/exec")) { 
                 log("FAIL: URL must end in /exec");
@@ -99,11 +105,17 @@
 
             const btn = document.getElementById('connect-btn');
             btn.innerText = "CONNECTING...";
-            log("Pinging Google...");
+            log("Pinging Google (HTTPS)...");
 
             try {
-                const response = await fetch(`${url}?check=ping`);
+                // ADDING TIMEOUT TO PREVENT HANGING
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                
+                const response = await fetch(`${url}?check=ping`, { signal: controller.signal });
                 const data = await response.json();
+                clearTimeout(timeoutId);
+                
                 if (data.status === "online") {
                     log(`SUCCESS: Connected to ${data.version}`);
                     tg.CloudStorage.setItem('api_url', url, (err, success) => {
@@ -113,7 +125,10 @@
                 }
             } catch (err) {
                 log(`ERROR: ${err.message}`);
-                tg.showAlert("Failed to connect. Check 'Anyone' access.");
+                if (err.name === 'AbortError') {
+                    log("FAIL: Connection timed out.");
+                }
+                tg.showAlert("Failed to connect. Check 'Anyone' access and ensure URL starts with HTTPS.");
                 btn.innerText = "RETRY";
             }
         }
